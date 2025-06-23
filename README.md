@@ -1,58 +1,108 @@
+# IoT Data Streaming Pipeline 🚀
 
-# Welcome to your CDK Python project!
+A fully open-source real-time data streaming platform built on AWS infrastructure using Kafka, Apache Spark, PostgreSQL, S3, Prometheus, and Grafana. This project simulates IoT sensor data and processes it through a scalable, fault-tolerant pipeline for storage, analysis, and visualization.
 
-This is a blank project for CDK development with Python.
+## 🌐 Project Overview
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+This project demonstrates how to build a real-time IoT data pipeline using open-source tools on AWS EC2 infrastructure. Key objectives:
 
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
+- Ingest sensor data using Kafka
+- Process data in near real-time using Apache Spark
+- Store raw data in S3 and transformed data in PostgreSQL
+- Monitor system performance using Prometheus and Grafana
+- Use AWS CDK (Python) for infrastructure as code
 
-To manually create a virtualenv on MacOS and Linux:
+---
 
-```
-$ python3 -m venv .venv
-```
-
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
+## 🏗️ Architecture
 
 ```
-$ source .venv/bin/activate
+Sensor (AWS Lambda)
+       ↓
+   Kafka (EC2)
+       ↓
+Spark Processor (EC2)
+  ↷           ↸
+S3 (Raw)   PostgreSQL (Processed)
+       ↓
+ Monitoring
+  (Prometheus + Grafana)
 ```
 
-If you are a Windows platform, you would activate the virtualenv like this:
+---
+
+## 📦 Tech Stack
+
+| Component      | Tech                      |
+|----------------|---------------------------|
+| Sensor Sim     | AWS Lambda (Python)       |
+| Message Queue  | Apache Kafka (on EC2)     |
+| Processing     | Apache Spark (on EC2)     |
+| Storage        | AWS S3, AWS RDS (Postgres)|
+| Monitoring     | Prometheus, Grafana       |
+| IaC            | AWS CDK (Python)          |
+
+---
+
+## 🧹 Features
+
+- ⚡ Real-time data ingestion with Kafka
+- 🔥 Stream processing using Spark
+- 📂 Dual storage: S3 for raw and Postgres for processed data
+- 📈 Live system metrics using Prometheus and Grafana
+- 🛠️ Reproducible infra setup using AWS CDK
+
+---
+
+## 🚧 Project Milestones
+
+- [x] Architecture finalized
+- [ ] CDK project setup
+- [ ] Kafka EC2 instance
+- [ ] Spark EC2 instance
+- [ ] Lambda sensor simulator
+- [ ] PostgreSQL schema + RDS
+- [ ] Prometheus + Grafana monitoring
+- [ ] Final integration + demo
+
+---
+
+## 📁 Folder Structure (Planned)
 
 ```
-% .venv\Scripts\activate.bat
+iot-streaming-pipeline/
+│
+├── cdk/                  # AWS CDK stacks
+├── lambda-simulator/     # Sensor simulation code
+├── kafka-setup/          # Kafka scripts and Dockerfiles
+├── spark-processor/      # PySpark processing logic
+├── monitoring/           # Prometheus & Grafana config
+├── infra-scripts/        # Setup scripts
+├── README.md
+└── .gitignore
 ```
 
-Once the virtualenv is activated, you can install the required dependencies.
+---
 
-```
-$ pip install -r requirements.txt
-```
+## 🧪 Demo Use Case
 
-At this point you can now synthesize the CloudFormation template for this code.
+Simulate temperature and humidity data from smart building sensors and process this data to:
+- Detect abnormal readings
+- Store trends in a database
+- Trigger alerts via monitoring dashboard
 
-```
-$ cdk synth
-```
+---
 
-To add additional dependencies, for example other CDK libraries, just add
-them to your `setup.py` file and rerun the `pip install -r requirements.txt`
-command.
+## 🧑‍💻 Authors
 
-## Useful commands
+**Sai Kiran Anumalla**       
+**Varun Sai Danduri**       
+MSCS @ Northeastern University        
+GitHub: [@saikirananumalla](https://github.com/saikirananumalla)       
+[@VarunSai-DVS](https://github.com/VarunSai-DVS)
 
- * `cdk ls`          list all stacks in the app
- * `cdk synth`       emits the synthesized CloudFormation template
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk docs`        open CDK documentation
+---
 
-Enjoy!
+## 📜 License
+
+MIT License – see `LICENSE` file for details.
