@@ -1,12 +1,12 @@
-# IoT Data Streaming Pipeline 🚀
+# Clickstream Data Streaming Pipeline 🚀
 
-A fully open-source real-time data streaming platform built on AWS infrastructure using Kafka, Apache Spark, PostgreSQL, S3, Prometheus, and Grafana. This project simulates IoT sensor data and processes it through a scalable, fault-tolerant pipeline for storage, analysis, and visualization.
+A fully open-source real-time data streaming platform built on AWS infrastructure using Kafka, Apache Spark, PostgreSQL, S3, Prometheus, and Grafana. This project simulates clickstream data and processes it through a scalable, fault-tolerant pipeline for storage, analysis, and visualization.
 
 ## 🌐 Project Overview
 
-This project demonstrates how to build a real-time IoT data pipeline using open-source tools on AWS EC2 infrastructure. Key objectives:
+This project demonstrates how to build a real-time clickstream data pipeline using open-source tools on AWS EC2 infrastructure. Key objectives:
 
-- Ingest sensor data using Kafka
+- Ingest clickstream data using Kafka
 - Process data in near real-time using Apache Spark
 - Store raw data in S3 and transformed data in PostgreSQL
 - Monitor system performance using Prometheus and Grafana
@@ -17,7 +17,7 @@ This project demonstrates how to build a real-time IoT data pipeline using open-
 ## 🏗️ Architecture
 
 ```
-Sensor (AWS Lambda)
+Clickstream Generator (AWS Lambda)
        ↓
    Kafka (EC2)
        ↓
@@ -35,7 +35,7 @@ S3 (Raw)   PostgreSQL (Processed)
 
 | Component      | Tech                      |
 |----------------|---------------------------|
-| Sensor Sim     | AWS Lambda (Python)       |
+| Clickstream Sim| AWS Lambda (Python)       |
 | Message Queue  | Apache Kafka (on EC2)     |
 | Processing     | Apache Spark (on EC2)     |
 | Storage        | AWS S3, AWS RDS (Postgres)|
@@ -60,7 +60,7 @@ S3 (Raw)   PostgreSQL (Processed)
 - [ ] CDK project setup
 - [ ] Kafka EC2 instance
 - [ ] Spark EC2 instance
-- [ ] Lambda sensor simulator
+- [ ] Lambda clickstream simulator
 - [ ] PostgreSQL schema + RDS
 - [ ] Prometheus + Grafana monitoring
 - [ ] Final integration + demo
@@ -70,10 +70,10 @@ S3 (Raw)   PostgreSQL (Processed)
 ## 📁 Folder Structure (Planned)
 
 ```
-iot-streaming-pipeline/
+data-streaming-pipeline/
 │
 ├── cdk/                  # AWS CDK stacks
-├── lambda-simulator/     # Sensor simulation code
+├── lambda/               # Clickstream simulation code
 ├── kafka-setup/          # Kafka scripts and Dockerfiles
 ├── spark-processor/      # PySpark processing logic
 ├── monitoring/           # Prometheus & Grafana config
@@ -86,10 +86,11 @@ iot-streaming-pipeline/
 
 ## 🧪 Demo Use Case
 
-Simulate temperature and humidity data from smart building sensors and process this data to:
-- Detect abnormal readings
-- Store trends in a database
-- Trigger alerts via monitoring dashboard
+Simulate clickstream data from e-commerce website users and process this data to:
+- Track user behavior patterns (page views, add to cart, purchases)
+- Analyze session data and conversion funnels
+- Monitor real-time user engagement metrics
+- Generate insights for business intelligence
 
 ---
 
