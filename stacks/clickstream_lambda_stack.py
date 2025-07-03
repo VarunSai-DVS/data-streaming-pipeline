@@ -19,9 +19,12 @@ class ClickstreamLambdaStack(Stack):
             handler="clickstream_generator.lambda_handler",
             code=_lambda.Code.from_asset("lambda"),
             environment={
-                "BUCKET_NAME": bucket.bucket_name
+                "BUCKET_NAME": bucket.bucket_name,
+                "KAFKA_BOOTSTRAP_SERVERS": "34.204.97.63:9092",
+                "KAFKA_TOPIC": "clickstream-events"
             },
-            timeout=cdk.Duration.seconds(10)
+            timeout=cdk.Duration.seconds(30),
+            memory_size=512
         )
 
         bucket.grant_write(fn)
