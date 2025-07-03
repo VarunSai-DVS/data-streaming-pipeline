@@ -241,7 +241,7 @@ scrape_configs:
         ec2_instance = ec2.Instance(self, "StreamingInstance",
             vpc=vpc,
             instance_type=ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
-            machine_image=ec2.MachineImage.latest_amazon_linux_2(),
+            machine_image=ec2.MachineImage.latest_amazon_linux2(),
             security_group=ec2_security_group,
             role=ec2_role,
             user_data=user_data,
@@ -262,7 +262,7 @@ scrape_configs:
         db_secret = secretsmanager.Secret(self, "DatabaseSecret",
             secret_name="streaming-pipeline-db-secret",
             generate_secret_string=secretsmanager.SecretStringGenerator(
-                secret_string_template='{"username": "admin"}',
+                secret_string_template='{"username": "streamingadmin"}',
                 generate_string_key="password",
                 exclude_characters="\"@/\\"
             )
@@ -283,7 +283,7 @@ scrape_configs:
 
         database = rds.DatabaseInstance(self, "StreamingDatabase",
             engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_15_4
+                version=rds.PostgresEngineVersion.VER_16
             ),
             instance_type=ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
             vpc=vpc,
