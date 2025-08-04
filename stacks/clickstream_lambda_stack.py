@@ -14,7 +14,7 @@ class ClickstreamLambdaStack(Stack):
 
         # Get EC2 instance public IP from infrastructure stack
         # This will be automatically updated when infrastructure is deployed
-        ec2_public_ip = self.node.try_get_context('ec2_public_ip') or '18.188.120.99'  # Will be updated after infrastructure deployment
+        ec2_public_ip = self.node.try_get_context('ec2_public_ip') or '3.148.233.121'  # Will be updated after infrastructure deployment
 
         # Create Lambda layer for Kafka libraries
         kafka_layer = _lambda.LayerVersion(self, "KafkaLayer",
