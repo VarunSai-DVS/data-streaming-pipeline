@@ -66,7 +66,7 @@ CREATE TABLE device_analytics (
     dimension_value VARCHAR(100),
     event_count INTEGER,
     unique_users INTEGER,
-    conversion_rate DECIMAL(5,2),
+    conversion_rate DECIMAL(5,2) NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(dimension_type, dimension_value)
 );

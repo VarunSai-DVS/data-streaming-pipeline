@@ -1,0 +1,110 @@
+{
+    "title": "Clickstream Analytics Dashboard",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Real-Time Event Stream",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [{
+          "rawSql": "SELECT metric_timestamp as time, total_events as value, 'Total Events' as metric FROM realtime_metrics WHERE $__timeFilter(metric_timestamp) ORDER BY time",
+          "format": "time_series"
+        }]
+      },
+      {
+        "id": 2,
+        "title": "Active Users",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [{
+          "rawSql": "SELECT unique_users FROM realtime_metrics ORDER BY metric_timestamp DESC LIMIT 1",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 3,
+        "title": "Conversion Rate",
+        "type": "gauge",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "targets": [{
+          "rawSql": "SELECT CASE WHEN page_views > 0 THEN (CAST(purchases AS FLOAT) / page_views * 100) ELSE 0 END as value FROM realtime_metrics ORDER BY metric_timestamp DESC LIMIT 1",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 4,
+        "title": "Top Pages (Accumulated)",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [{
+          "rawSql": "SELECT page_url, SUM(view_count) as total_views, MAX(unique_visitors) as unique_visitors FROM page_metrics GROUP BY page_url ORDER BY total_views DESC LIMIT 10",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 5,
+        "title": "Events by Type (Last Hour)",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+        "targets": [{
+          "rawSql": "SELECT event_type, COUNT(*) as count FROM clickstream_events WHERE timestamp > CURRENT_TIMESTAMP - INTERVAL '1 hour' GROUP BY event_type",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 6,
+        "title": "Device Distribution",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+        "targets": [{
+          "rawSql": "SELECT dimension_value as device, SUM(event_count) as total_events FROM device_analytics WHERE dimension_type = 'device' GROUP BY dimension_value ORDER BY total_events DESC",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 7,
+        "title": "Hourly Activity Heatmap",
+        "type": "heatmap",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [{
+          "rawSql": "SELECT DATE_TRUNC('hour', timestamp) as time, EXTRACT(hour FROM timestamp) as hour, COUNT(*) as value FROM clickstream_events WHERE $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series"
+        }]
+      },
+      {
+        "id": 8,
+        "title": "Recent Session Metrics",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [{
+          "rawSql": "SELECT metric_timestamp, unique_sessions, bounce_rate, page_views, purchases, cart_additions FROM realtime_metrics ORDER BY metric_timestamp DESC LIMIT 20",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 9,
+        "title": "Bounce Rate Trend",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [{
+          "rawSql": "SELECT metric_timestamp as time, bounce_rate as value, 'Bounce Rate' as metric FROM realtime_metrics WHERE $__timeFilter(metric_timestamp) ORDER BY time",
+          "format": "time_series"
+        }]
+      },
+      {
+        "id": 10,
+        "title": "Region Distribution",
+        "type": "bargauge",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [{
+          "rawSql": "SELECT dimension_value as region, SUM(event_count) as events FROM device_analytics WHERE dimension_type = 'region' AND dimension_value IS NOT NULL GROUP BY dimension_value ORDER BY events DESC LIMIT 10",
+          "format": "table"
+        }]
+      }
+    ],
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
