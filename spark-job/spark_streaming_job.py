@@ -12,6 +12,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark.sql.window import Window
+from pyspark.sql.functions import to_timestamp
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,133 +38,52 @@ spark = SparkSession.builder \
 
 spark.sparkContext.setLogLevel("WARN")
 
-# Define schema
+# Define schema to match actual Kafka message format
 clickstream_schema = StructType([
-    StructField("user_id", StringType(), True),
-    StructField("page_url", StringType(), True),
-    StructField("event_type", StringType(), True),
-    StructField("timestamp", TimestampType(), True),
-    StructField("session_id", StringType(), True),
-    StructField("user_agent", StringType(), True),
-    StructField("ip_address", StringType(), True),
-    StructField("country", StringType(), True),
-    StructField("device_type", StringType(), True),
-    StructField("referrer", StringType(), True)
+    StructField("userId", StringType(), True),
+    StructField("sessionId", StringType(), True),
+    StructField("eventType", StringType(), True),
+    StructField("eventTime", StringType(), True),  # Keep as string, convert to timestamp later
+    StructField("page", StringType(), True),
+    StructField("referrer", StringType(), True),
+    StructField("device", StringType(), True),
+    StructField("region", StringType(), True)
 ])
 
-def create_tables():
-    """Create all necessary tables for metrics using JDBC"""
+def verify_tables():
+    """Verify that all required tables exist in the database"""
     try:
-        # Create tables using Spark SQL and JDBC
-        tables_config = [
-            {
-                "name": "clickstream_events",
-                "sql": """
-                    CREATE TABLE IF NOT EXISTS clickstream_events (
-                        id SERIAL PRIMARY KEY,
-                        user_id VARCHAR(50),
-                        page_url VARCHAR(500),
-                        event_type VARCHAR(50),
-                        timestamp TIMESTAMP,
-                        session_id VARCHAR(100),
-                        user_agent TEXT,
-                        ip_address VARCHAR(50),
-                        country VARCHAR(50),
-                        device_type VARCHAR(50),
-                        referrer VARCHAR(500),
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-            },
-            {
-                "name": "realtime_metrics",
-                "sql": """
-                    CREATE TABLE IF NOT EXISTS realtime_metrics (
-                        id SERIAL PRIMARY KEY,
-                        metric_timestamp TIMESTAMP,
-                        total_events INTEGER,
-                        unique_users INTEGER,
-                        unique_sessions INTEGER,
-                        page_views INTEGER,
-                        purchases INTEGER,
-                        cart_additions INTEGER,
-                        bounce_rate DECIMAL(5,2),
-                        avg_session_duration INTEGER,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-            },
-            {
-                "name": "page_metrics",
-                "sql": """
-                    CREATE TABLE IF NOT EXISTS page_metrics (
-                        id SERIAL PRIMARY KEY,
-                        page_url VARCHAR(500),
-                        view_count INTEGER,
-                        unique_visitors INTEGER,
-                        avg_time_on_page INTEGER,
-                        bounce_rate DECIMAL(5,2),
-                        conversion_rate DECIMAL(5,2),
-                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-            },
-            {
-                "name": "user_behavior",
-                "sql": """
-                    CREATE TABLE IF NOT EXISTS user_behavior (
-                        user_id VARCHAR(50) PRIMARY KEY,
-                        total_sessions INTEGER,
-                        total_page_views INTEGER,
-                        total_purchases INTEGER,
-                        avg_session_duration INTEGER,
-                        last_active TIMESTAMP,
-                        lifetime_value DECIMAL(10,2),
-                        churn_risk_score DECIMAL(3,2),
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-            },
-            {
-                "name": "device_analytics",
-                "sql": """
-                    CREATE TABLE IF NOT EXISTS device_analytics (
-                        id SERIAL PRIMARY KEY,
-                        dimension_type VARCHAR(50),
-                        dimension_value VARCHAR(100),
-                        event_count INTEGER,
-                        unique_users INTEGER,
-                        conversion_rate DECIMAL(5,2),
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(dimension_type, dimension_value)
-                    )
-                """
-            }
+        required_tables = [
+            "clickstream_events",
+            "realtime_metrics", 
+            "page_metrics",
+            "user_behavior",
+            "device_analytics"
         ]
         
-        # Execute table creation using JDBC
-        for table_config in tables_config:
+        # Test connection and verify tables exist
+        for table_name in required_tables:
             try:
-                # Create empty DataFrame to trigger table creation
-                empty_df = spark.createDataFrame([], StructType([StructField("dummy", StringType(), True)]))
-                empty_df.write \
+                # Try to read from the table to verify it exists
+                test_df = spark.read \
                     .format("jdbc") \
                     .option("url", f"jdbc:postgresql://{POSTGRES_HOST}:5432/{POSTGRES_DB}") \
-                    .option("dbtable", table_config["name"]) \
+                    .option("dbtable", table_name) \
                     .option("user", POSTGRES_USER) \
                     .option("password", POSTGRES_PASSWORD) \
                     .option("driver", "org.postgresql.Driver") \
-                    .mode("ignore") \
-                    .save()
-                logger.info(f"✅ Table {table_config['name']} ready")
+                    .load()
+                
+                logger.info(f"✅ Table {table_name} exists and is accessible")
             except Exception as e:
-                logger.warning(f"⚠️  Table {table_config['name']} may already exist: {e}")
+                logger.error(f"❌ Table {table_name} not found or not accessible: {e}")
+                raise Exception(f"Required table {table_name} is missing. Please run database_schema.sql first.")
         
-        logger.info("✅ All tables created successfully")
+        logger.info("✅ All required tables verified successfully")
         
     except Exception as e:
-        logger.error(f"❌ Error creating tables: {e}")
-        # Continue anyway - tables might already exist
+        logger.error(f"❌ Database verification failed: {e}")
+        raise
 
 def write_to_postgres(df, table_name, mode="append"):
     """Write DataFrame to PostgreSQL using JDBC"""
@@ -221,8 +141,17 @@ def process_batch(df, epoch_id):
 
 def store_raw_events(df):
     """Store raw clickstream events using JDBC"""
-    # Add created_at column
-    events_df = df.withColumn("created_at", current_timestamp())
+    # Map new field names to database column names and convert data types
+    events_df = df.select(
+        col("userId").alias("user_id"),
+        col("page").alias("page_url"),
+        col("eventType").alias("event_type"),
+        to_timestamp(col("eventTime")).alias("timestamp"),  # Convert string to timestamp
+        col("sessionId").alias("session_id"),
+        col("device"),
+        col("region"),
+        col("referrer")
+    ).withColumn("created_at", current_timestamp())
     write_to_postgres(events_df, "clickstream_events")
 
 def calculate_realtime_metrics(df):
@@ -231,15 +160,15 @@ def calculate_realtime_metrics(df):
     # Calculate metrics
     metrics = df.agg(
         count("*").alias("total_events"),
-        countDistinct("user_id").alias("unique_users"),
-        countDistinct("session_id").alias("unique_sessions"),
-        sum(when(col("event_type") == "page_view", 1).otherwise(0)).alias("page_views"),
-        sum(when(col("event_type") == "purchase", 1).otherwise(0)).alias("purchases"),
-        sum(when(col("event_type") == "add_to_cart", 1).otherwise(0)).alias("cart_additions")
+        countDistinct("userId").alias("unique_users"),
+        countDistinct("sessionId").alias("unique_sessions"),
+        sum(when(col("eventType") == "PAGE_VIEW", 1).otherwise(0)).alias("page_views"),
+        sum(when(col("eventType") == "PURCHASE", 1).otherwise(0)).alias("purchases"),
+        sum(when(col("eventType") == "ADD_TO_CART", 1).otherwise(0)).alias("cart_additions")
     ).collect()[0]
     
     # Calculate bounce rate (sessions with only 1 event)
-    session_events = df.groupBy("session_id").count()
+    session_events = df.groupBy("sessionId").count()
     bounce_sessions = session_events.filter(col("count") == 1).count()
     total_sessions = session_events.count()
     bounce_rate = (bounce_sessions / total_sessions * 100) if total_sessions > 0 else 0
@@ -263,50 +192,64 @@ def calculate_realtime_metrics(df):
 def update_page_metrics(df):
     """Update page-level metrics using JDBC"""
     
-    page_metrics = df.filter(col("event_type") == "page_view") \
-        .groupBy("page_url") \
+    page_metrics = df.filter(col("eventType") == "PAGE_VIEW") \
+        .groupBy("page") \
         .agg(
             count("*").alias("view_count"),
-            countDistinct("user_id").alias("unique_visitors")
+            countDistinct("userId").alias("unique_visitors")
         )
     
     if page_metrics.count() > 0:
-        write_to_postgres(page_metrics, "page_metrics", mode="overwrite")
+        # Map field names to database columns
+        page_metrics_mapped = page_metrics.select(
+            col("page").alias("page_url"),
+            col("view_count"),
+            col("unique_visitors")
+        )
+        write_to_postgres(page_metrics_mapped, "page_metrics", mode="overwrite")
 
 def update_user_behavior(df):
     """Update user behavior metrics using JDBC"""
     
-    user_metrics = df.groupBy("user_id").agg(
-        countDistinct("session_id").alias("sessions"),
+    user_metrics = df.groupBy("userId").agg(
+        countDistinct("sessionId").alias("sessions"),
         count("*").alias("events"),
-        sum(when(col("event_type") == "purchase", 1).otherwise(0)).alias("purchases"),
-        max("timestamp").alias("last_active")
+        sum(when(col("eventType") == "PURCHASE", 1).otherwise(0)).alias("purchases"),
+        max(to_timestamp(col("eventTime"))).alias("last_active")  # Convert to timestamp
     )
     
     if user_metrics.count() > 0:
-        write_to_postgres(user_metrics, "user_behavior", mode="overwrite")
+        # Map field names to database columns
+        user_metrics_mapped = user_metrics.select(
+            col("userId").alias("user_id"),
+            col("sessions"),
+            col("events"),
+            col("purchases"),
+            col("last_active")
+        )
+        write_to_postgres(user_metrics_mapped, "user_behavior", mode="overwrite")
 
 def update_device_analytics(df):
     """Update device and country analytics using JDBC"""
     
     # Device analytics
-    device_metrics = df.groupBy("device_type").agg(
+    device_metrics = df.groupBy("device").agg(
         count("*").alias("event_count"),
-        countDistinct("user_id").alias("unique_users")
+        countDistinct("userId").alias("unique_users")
     )
     
     # Country analytics
-    country_metrics = df.groupBy("country").agg(
+    country_metrics = df.groupBy("region").agg(
         count("*").alias("event_count"),
-        countDistinct("user_id").alias("unique_users")
+        countDistinct("userId").alias("unique_users")
     )
     
     # Combine device and country metrics
     device_metrics = device_metrics.withColumn("dimension_type", lit("device")) \
-        .withColumnRenamed("device_type", "dimension_value")
+        .withColumnRenamed("device", "dimension_value")
     
     country_metrics = country_metrics.withColumn("dimension_type", lit("country")) \
-        .withColumnRenamed("country", "dimension_value")
+        .withColumnRenamed("region", "dimension_value")
     
     combined_metrics = device_metrics.union(country_metrics)
     
@@ -315,8 +258,8 @@ def update_device_analytics(df):
 
 # Main execution
 if __name__ == "__main__":
-    # Create tables
-    create_tables()
+    # Verify tables exist
+    verify_tables()
     
     # Read from Kafka
     kafka_df = spark \
@@ -332,7 +275,7 @@ if __name__ == "__main__":
     parsed_df = kafka_df \
         .select(from_json(col("value").cast("string"), clickstream_schema).alias("data")) \
         .select("data.*") \
-        .filter(col("user_id").isNotNull())
+        .filter(col("userId").isNotNull())
     
     # Start streaming query
     query = parsed_df \
