@@ -103,7 +103,7 @@ def write_to_postgres(df, table_name, mode="append"):
         raise
 
 def process_batch(df, epoch_id):
-    """Process each micro-batch with multiple analytics using JDBC"""
+    """Process each batch of streaming data"""
     
     if df.count() == 0:
         logger.info(f"Empty batch {epoch_id}")
@@ -116,19 +116,34 @@ def process_batch(df, epoch_id):
         df.cache()
         
         # 1. Store raw events
-        store_raw_events(df)
+        try:
+            store_raw_events(df)
+        except Exception as e:
+            logger.error(f"❌ Error storing raw events: {e}")
         
         # 2. Calculate real-time metrics
-        calculate_realtime_metrics(df)
+        try:
+            calculate_realtime_metrics(df)
+        except Exception as e:
+            logger.error(f"❌ Error calculating metrics: {e}")
         
         # 3. Update page metrics
-        update_page_metrics(df)
+        try:
+            update_page_metrics(df)
+        except Exception as e:
+            logger.error(f"❌ Error updating page metrics: {e}")
         
         # 4. Update user behavior
-        update_user_behavior(df)
+        try:
+            update_user_behavior(df)
+        except Exception as e:
+            logger.error(f"❌ Error updating user behavior: {e}")
         
         # 5. Update device/country analytics
-        update_device_analytics(df)
+        try:
+            update_device_analytics(df)
+        except Exception as e:
+            logger.error(f"❌ Error updating device analytics: {e}")
         
         # Unpersist the cached DataFrame
         df.unpersist()
@@ -137,7 +152,7 @@ def process_batch(df, epoch_id):
         
     except Exception as e:
         logger.error(f"❌ Error processing batch {epoch_id}: {e}")
-        raise
+        # Don't raise the exception to keep the job running
 
 def store_raw_events(df):
     """Store raw clickstream events using JDBC"""
@@ -282,7 +297,7 @@ if __name__ == "__main__":
         .writeStream \
         .outputMode("append") \
         .foreachBatch(process_batch) \
-        .trigger(processingTime="10 seconds") \
+        .trigger(processingTime="30 seconds") \
         .start()
     
     logger.info("🚀 Streaming job started successfully!")
