@@ -66,7 +66,7 @@ class InfrastructureStack(Stack):
         # Allow Spark UI access
         ec2_security_group.add_ingress_rule(
             peer=ec2.Peer.any_ipv4(),
-            connection=ec2.Port.tcp(4040),
+            connection=ec2.Port.tcp(8080),
             description="Spark UI access"
         )
 
@@ -90,157 +90,55 @@ class InfrastructureStack(Stack):
             resources=["*"]
         ))
 
-        # User data script to install Docker and setup services
+        # Add CloudFormation permissions for Spark job deployment
+        ec2_role.add_to_policy(iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=[
+                "cloudformation:DescribeStacks",
+                "cloudformation:ListStacks"
+            ],
+            resources=["*"]
+        ))
+
+
+
+        # Minimal user data script - just install Docker and create directory
         user_data = ec2.UserData.for_linux()
+        
+        # Basic setup commands only
         user_data.add_commands(
             "#!/bin/bash",
+            "set -e",
+            "exec > >(tee /var/log/user-data.log)",
+            "exec 2>&1",
+            "",
+            "echo '=== Starting minimal infrastructure setup ==='",
             "yum update -y",
-            "yum install -y docker",
-            "service docker start",
+            "yum install -y docker git postgresql15",
+            "systemctl enable docker",
+            "systemctl start docker",
             "usermod -a -G docker ec2-user",
-            "yum install -y git",
+            "",
+            "# Install Docker Compose",
             "curl -L \"https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)\" -o /usr/local/bin/docker-compose",
             "chmod +x /usr/local/bin/docker-compose",
+            "ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose",
+            "",
+            "# Create working directory",
             "mkdir -p /opt/streaming-pipeline",
-            "cd /opt/streaming-pipeline"
-        )
-
-        # Create Docker Compose file
-        docker_compose_content = '''version: '3.8'
-
-services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:latest
-    hostname: zookeeper
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    volumes:
-      - zookeeper-data:/var/lib/zookeeper/data
-      - zookeeper-logs:/var/lib/zookeeper/log
-
-  kafka:
-    image: confluentinc/cp-kafka:latest
-    hostname: kafka
-    container_name: kafka
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-    volumes:
-      - kafka-data:/var/lib/kafka/data
-
-  spark-master:
-    image: bitnami/spark:latest
-    hostname: spark-master
-    container_name: spark-master
-    ports:
-      - "8080:8080"
-      - "7077:7077"
-    environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-    volumes:
-      - spark-data:/opt/bitnami/spark
-
-  spark-worker:
-    image: bitnami/spark:latest
-    hostname: spark-worker
-    container_name: spark-worker
-    depends_on:
-      - spark-master
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=1G
-      - SPARK_WORKER_CORES=1
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-    volumes:
-      - spark-data:/opt/bitnami/spark
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus-data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
-    volumes:
-      - grafana-data:/var/lib/grafana
-
-volumes:
-  zookeeper-data:
-  zookeeper-logs:
-  kafka-data:
-  spark-data:
-  prometheus-data:
-  grafana-data:
-'''
-
-        # Create Prometheus configuration
-        prometheus_config = '''global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
-
-  - job_name: 'kafka'
-    static_configs:
-      - targets: ['localhost:9092']
-
-  - job_name: 'spark'
-    static_configs:
-      - targets: ['localhost:8080']
-'''
-
-        # Add Docker Compose and config files to user data
-        user_data.add_commands(
-            f"cat > /opt/streaming-pipeline/docker-compose.yml << 'EOF'\n{docker_compose_content}\nEOF",
-            f"cat > /opt/streaming-pipeline/prometheus.yml << 'EOF'\n{prometheus_config}\nEOF",
             "cd /opt/streaming-pipeline",
-            "docker-compose up -d",
-            "echo 'Infrastructure setup complete!'"
+            "",
+            "echo '=== Minimal setup complete - services will be configured via post-deployment script ==='",
         )
 
-        # EC2 Instance (t3.micro for free tier)
+        # Docker Compose and Prometheus config moved to post-deployment script
+
+        # No additional commands - all setup will be done via post-deployment script
+
+        # EC2 Instance (t3.medium for better performance)
         ec2_instance = ec2.Instance(self, "StreamingInstance",
             vpc=vpc,
-            instance_type=ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+            instance_type=ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM),
             machine_image=ec2.MachineImage.latest_amazon_linux2(),
             security_group=ec2_security_group,
             role=ec2_role,
@@ -257,6 +155,10 @@ scrape_configs:
                 )
             ]
         )
+
+        # Tag the instance for easy identification
+        cdk.Tags.of(ec2_instance).add("Name", "Streaming-Pipeline-Instance")
+        cdk.Tags.of(ec2_instance).add("Project", "ClickstreamAnalytics")
 
         # RDS PostgreSQL instance (free tier)
         db_secret = secretsmanager.Secret(self, "DatabaseSecret",
@@ -275,6 +177,13 @@ scrape_configs:
         )
 
         # Allow EC2 to connect to RDS
+        
+        # Allow connections from anywhere (for Colab access)
+        db_security_group.add_ingress_rule(
+            peer=ec2.Peer.any_ipv4(),
+            connection=ec2.Port.tcp(5432),
+            description="Allow PostgreSQL access from anywhere"
+        )
         db_security_group.add_ingress_rule(
             peer=ec2_security_group,
             connection=ec2.Port.tcp(5432),
@@ -298,6 +207,15 @@ scrape_configs:
             removal_policy=RemovalPolicy.DESTROY,
             publicly_accessible=True  # For free tier simplicity
         )
+
+        # Add Secrets Manager permissions for database password (after db_secret is defined)
+        ec2_role.add_to_policy(iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=[
+                "secretsmanager:GetSecretValue"
+            ],
+            resources=[db_secret.secret_arn]
+        ))
 
         # Outputs
         cdk.CfnOutput(self, "EC2InstanceId",
@@ -327,10 +245,28 @@ scrape_configs:
 
         cdk.CfnOutput(self, "GrafanaURL",
             value=f"http://{ec2_instance.instance_public_ip}:3000",
-            description="Grafana Dashboard URL"
+            description="Grafana Dashboard URL (admin/admin123)"
         )
 
         cdk.CfnOutput(self, "PrometheusURL",
             value=f"http://{ec2_instance.instance_public_ip}:9090",
             description="Prometheus Metrics URL"
-        ) 
+        )
+
+        cdk.CfnOutput(self, "SparkUIURL",
+            value=f"http://{ec2_instance.instance_public_ip}:8080",
+            description="Spark UI URL"
+        )
+
+        cdk.CfnOutput(self, "VPCId",
+            value=vpc.vpc_id,
+            description="VPC ID"
+        )
+
+        cdk.CfnOutput(self, "SSMConnectCommand",
+            value=f"aws ssm start-session --target {ec2_instance.instance_id}",
+            description="Command to connect via SSM"
+        )
+
+        # Note: S3 bucket name will be available in CloudFormation outputs after deployment
+        # You can get it by running: aws cloudformation describe-stacks --stack-name InfrastructureStack --query 'Stacks[0].Outputs[?OutputKey==`S3BucketName`].OutputValue' --output text

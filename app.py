@@ -6,10 +6,10 @@ from stacks.infrastructure_stack import InfrastructureStack
 
 app = cdk.App()
 
-# Deploy Lambda stack first
-ClickstreamLambdaStack(app, "ClickstreamLambdaStack")
-
-# Deploy infrastructure stack
+# Deploy infrastructure stack first
 InfrastructureStack(app, "InfrastructureStack")
+
+# Deploy Lambda stack
+ClickstreamLambdaStack(app, "ClickstreamLambdaStack")
 
 app.synth()

@@ -8,3 +8,19 @@ __pycache__
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Logs and environment files
+logs/
+*.log
+.env
+monitor_output.txt
+
+# Debug and temporary files
+*.txt
+!spark-job/requirements.txt
+response.json
+restart_output.txt
+
+# Lambda layer files (should be recreated, not committed)
+python/
+lambda-layer.zip
