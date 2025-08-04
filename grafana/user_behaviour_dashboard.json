@@ -1,0 +1,100 @@
+{
+    "title": "User Behavior Analytics",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Conversion Funnel",
+        "type": "bargauge",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [{
+          "rawSql": "SELECT 'Page Views' as stage, COUNT(*) as count FROM clickstream_events WHERE event_type = 'PAGE_VIEW' UNION ALL SELECT 'Add to Cart', COUNT(*) FROM clickstream_events WHERE event_type = 'ADD_TO_CART' UNION ALL SELECT 'Purchases', COUNT(*) FROM clickstream_events WHERE event_type = 'PURCHASE' ORDER BY count DESC",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 2,
+        "title": "User Engagement Metrics",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+        "targets": [{
+          "rawSql": "SELECT COUNT(DISTINCT user_id) as total_users FROM user_behavior",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 3,
+        "title": "Average Sessions per User",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+        "targets": [{
+          "rawSql": "SELECT ROUND(AVG(sessions), 2) as avg_sessions FROM (SELECT user_id, SUM(sessions) as sessions FROM user_behavior GROUP BY user_id) t",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 4,
+        "title": "Purchase Conversion",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+        "targets": [{
+          "rawSql": "SELECT ROUND(100.0 * COUNT(CASE WHEN purchases > 0 THEN 1 END) / NULLIF(COUNT(*), 0), 2) as conversion_rate FROM (SELECT user_id, SUM(purchases) as purchases FROM user_behavior GROUP BY user_id) t",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 5,
+        "title": "Top Active Users",
+        "type": "table",
+        "gridPos": {"h": 10, "w": 12, "x": 0, "y": 8},
+        "targets": [{
+          "rawSql": "SELECT user_id, SUM(sessions) as total_sessions, SUM(events) as total_events, SUM(purchases) as total_purchases, MAX(last_active) as last_seen FROM user_behavior GROUP BY user_id ORDER BY total_events DESC LIMIT 20",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 6,
+        "title": "User Activity Distribution",
+        "type": "histogram",
+        "gridPos": {"h": 10, "w": 12, "x": 12, "y": 8},
+        "targets": [{
+          "rawSql": "SELECT SUM(events) as events_per_user FROM user_behavior GROUP BY user_id",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 7,
+        "title": "User Retention by Hour",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+        "targets": [{
+          "rawSql": "SELECT DATE_TRUNC('hour', timestamp) as time, COUNT(DISTINCT user_id) as active_users FROM clickstream_events WHERE $__timeFilter(timestamp) GROUP BY 1 ORDER BY 1",
+          "format": "time_series"
+        }]
+      },
+      {
+        "id": 8,
+        "title": "Device Preference by User Segment",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
+        "targets": [{
+          "rawSql": "WITH user_segments AS (SELECT user_id, CASE WHEN SUM(purchases) = 0 THEN 'Browsers' WHEN SUM(purchases) = 1 THEN 'One-time Buyers' ELSE 'Repeat Buyers' END as segment FROM user_behavior GROUP BY user_id) SELECT us.segment, ce.device, COUNT(DISTINCT us.user_id) as users FROM user_segments us JOIN clickstream_events ce ON us.user_id = ce.user_id WHERE ce.device IS NOT NULL GROUP BY us.segment, ce.device ORDER BY users DESC",
+          "format": "table"
+        }]
+      },
+      {
+        "id": 9,
+        "title": "Recent User Activity",
+        "type": "logs",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 26},
+        "targets": [{
+          "rawSql": "SELECT timestamp as time, user_id, event_type, page_url, device FROM clickstream_events ORDER BY timestamp DESC LIMIT 50",
+          "format": "table"
+        }]
+      }
+    ],
+    "refresh": "30s",
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    }
+  }

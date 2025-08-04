@@ -221,7 +221,7 @@ def update_page_metrics(df):
             col("view_count"),
             col("unique_visitors")
         )
-        write_to_postgres(page_metrics_mapped, "page_metrics", mode="overwrite")
+        write_to_postgres(page_metrics_mapped, "page_metrics", mode="append")
 
 def update_user_behavior(df):
     """Update user behavior metrics using JDBC"""
@@ -242,7 +242,7 @@ def update_user_behavior(df):
             col("purchases"),
             col("last_active")
         )
-        write_to_postgres(user_metrics_mapped, "user_behavior", mode="overwrite")
+        write_to_postgres(user_metrics_mapped, "user_behavior", mode="append")
 
 def update_device_analytics(df):
     """Update device and country analytics using JDBC"""
@@ -269,7 +269,7 @@ def update_device_analytics(df):
     combined_metrics = device_metrics.union(country_metrics)
     
     if combined_metrics.count() > 0:
-        write_to_postgres(combined_metrics, "device_analytics", mode="overwrite")
+        write_to_postgres(combined_metrics, "device_analytics", mode="append")
 
 # Main execution
 if __name__ == "__main__":
