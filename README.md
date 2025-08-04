@@ -4,11 +4,11 @@ A fully open-source real-time data streaming platform built on AWS infrastructur
 
 ## 🌐 Project Overview
 
-This project demonstrates how to build a real-time clickstream data pipeline using open-source tools on AWS EC2 infrastructure with Google Colab for remote Spark processing. Key objectives:
+This project demonstrates how to build a real-time clickstream data pipeline using open-source tools on AWS EC2 infrastructure with local Spark processing. Key objectives:
 
-- Ingest clickstream data using Kafka
-- Process data in near real-time using Apache Spark (Google Colab)
-- Store processed data in PostgreSQL
+- Ingest clickstream data using AWS Lambda
+- Process data in real-time using Apache Spark (EC2 Local Cluster)
+- Store processed data in PostgreSQL with proper schema management
 - Monitor system performance using Prometheus and Grafana
 - Use AWS CDK (Python) for infrastructure as code
 
@@ -48,10 +48,12 @@ PostgreSQL (Processed Data)
 
 - ⚡ Real-time data ingestion with Kafka
 - 🔥 Stream processing using Spark (EC2 Local Cluster)
-- 📂 PostgreSQL storage for processed data
+- 📂 PostgreSQL storage with proper schema management
 - 📈 Live system metrics using Prometheus and Grafana
 - 🛠️ Reproducible infra setup using AWS CDK
 - 🐳 Docker-based Spark cluster deployment
+- 📊 Comprehensive analytics dashboards
+- 🔄 Automated data pipeline with error handling
 
 ---
 
@@ -99,14 +101,25 @@ PostgreSQL (Processed Data)
    - Deploys ClickstreamLambdaStack
    - Runs post-deployment service setup
 
-2. **Verify Services:**
+2. **Set Up Database Schema:**
    ```bash
-   # Check if Docker services are running
-   ./monitor_services.sh
+   # Create database tables with proper schema
+   # Run the SQL commands in database_schema.sql via DBeaver or psql
+   ```
+
+3. **Deploy Spark Job:**
+   ```bash
+   ./spark-job/deploy_streaming_job.sh
+   ```
+
+4. **Set Up Monitoring:**
+   ```bash
+   # Manual import (recommended)
+   # Access Grafana: http://<EC2_IP>:3000 (admin/admin123)
+   # Import grafana/grafana_job.json for comprehensive dashboards
    
-   # Or connect to EC2 and check manually
-   aws ssm start-session --target <EC2_INSTANCE_ID>
-   docker ps
+   # Or automated setup
+   ./grafana/deploy_grafana_job.sh
    ```
 
 ### Verification Steps
@@ -120,44 +133,86 @@ PostgreSQL (Processed Data)
    aws ssm send-command --instance-ids <EC2_INSTANCE_ID> --document-name "AWS-RunShellScript" --parameters '{"commands":["docker exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic clickstream-events --from-beginning --max-messages 5"]}'
    ```
 
-2. **Access Monitoring Dashboards:**
+2. **Check Spark Job Status:**
+   ```bash
+   # Check deployment logs
+   sudo cat /tmp/spark_deploy.log
+   
+   # Check if job is running
+   docker exec spark-master ps aux | grep python
+   
+   # Access Spark UI
+   # http://<EC2_PUBLIC_IP>:8080
+   ```
+
+3. **Verify Data Pipeline:**
+   ```bash
+   # Check if data is flowing to PostgreSQL
+   # Connect to database and verify tables have data
+   ```
+
+4. **Access Monitoring Dashboards:**
    - Grafana: `http://<EC2_PUBLIC_IP>:3000` (admin/admin123)
    - Prometheus: `http://<EC2_PUBLIC_IP>:9090`
    - Spark UI: `http://<EC2_PUBLIC_IP>:8080`
 
-### Google Colab Processing
+### Database Schema Management
 
-The Spark processing is now done remotely using Google Colab:
+The project uses a **separated database schema approach**:
 
-1. **Connect to AWS Spark Cluster:**
-   ```
-   spark://<EC2_PUBLIC_IP>:7077
-   ```
-
-2. **Connect to AWS Kafka:**
-   ```
-   <EC2_PUBLIC_IP>:9092
+1. **Manual Table Creation:**
+   ```sql
+   -- Run database_schema.sql in DBeaver or psql
+   -- Creates all necessary tables with proper schema
    ```
 
-3. **Connect to AWS PostgreSQL:**
-   - Host: RDS endpoint
-   - Port: 5432
-   - Database: clickstream_db
-   - User: streamingadmin
+2. **Spark Job Verification:**
+   - Spark job only verifies tables exist
+   - No table creation in Spark job
+   - Clean separation of concerns
+
+### Monitoring Setup
+
+**Comprehensive Dashboards Available:**
+
+1. **Clickstream Analytics Dashboard:**
+   - Real-time event stream visualization
+   - Active users and conversion rates
+   - Top pages with bounce rates
+   - Device distribution analysis
+   - User activity heatmaps
+
+2. **User Behavior Analytics Dashboard:**
+   - User engagement funnels
+   - Top users by activity
+   - User retention cohorts
+
+3. **System Monitoring Dashboard:**
+   - Pipeline status monitoring
+   - Database health checks
+   - Recent events tracking
 
 ### Known Issues & Fixes
 
-1. **Lambda IP Update Issue:**
-   - Problem: Lambda uses hardcoded IP from previous deployment
-   - Fix: `deploy_all.sh` automatically updates IP using regex pattern
+1. **Schema Mismatch Issue:**
+   - Problem: Spark job expecting different field names than Kafka messages
+   - Fix: Updated Spark job schema to match Kafka message format
+   - Status: ✅ **RESOLVED**
 
-2. **Docker Services Not Running:**
-   - Problem: Services stop after deployment
-   - Fix: Run `./scripts/setup_services.sh` to restart services
+2. **Database Table Creation:**
+   - Problem: Spark job creating tables with "dummy" columns
+   - Fix: Separated database schema management
+   - Status: ✅ **RESOLVED**
 
-3. **RDS Security Group:**
-   - Problem: Colab can't connect to PostgreSQL
-   - Fix: Security group allows connections from anywhere (`0.0.0.0/0:5432`)
+3. **Spark Job Timeout:**
+   - Problem: Spark job timing out due to database connection issues
+   - Fix: Added proper error handling and connection testing
+   - Status: ✅ **RESOLVED**
+
+4. **Data Pipeline Performance:**
+   - Problem: Slow processing causing batch delays
+   - Fix: Optimized processing intervals and error handling
+   - Status: ✅ **RESOLVED**
 
 ### Cleanup
 ```bash
@@ -176,9 +231,13 @@ cdk destroy --all
 - [x] PostgreSQL schema + RDS
 - [x] Prometheus + Grafana monitoring
 - [x] Lambda → Kafka integration
-- [x] Google Colab remote processing
+- [x] Spark → PostgreSQL integration
+- [x] Database schema management
+- [x] Comprehensive monitoring dashboards
+- [x] Real-time data processing pipeline
+- [x] Error handling and debugging
 - [x] Infrastructure cleanup and optimization
-- [ ] Final integration + demo
+- [x] **FINAL INTEGRATION + DEMO** ✅
 
 ---
 
@@ -194,10 +253,17 @@ data-streaming-pipeline/
 │   └── clickstream_generator.py
 ├── spark-job/            # Spark processing reference
 │   └── clickstream_processor.py
+├── spark-job/            # Spark processing code
+│   ├── spark_streaming_job.py
+│   └── deploy_streaming_job.sh
+├── grafana/              # Monitoring dashboards
+│   ├── grafana_job.json
+│   └── deploy_grafana_job.sh
 ├── scripts/              # Deployment and setup scripts
 │   ├── setup_services.sh
 │   ├── deploy_all.sh
 │   └── monitor_services.sh
+├── database_schema.sql   # Database schema definition
 ├── lambda-layer.zip      # Kafka client libraries
 ├── requirements.txt      # Python dependencies
 ├── cdk.json             # CDK configuration
@@ -221,32 +287,53 @@ Simulate clickstream data from e-commerce website users and process this data to
 
 ## 🔄 Recent Updates (August 2025)
 
-### **Google Colab Approach**
-- **Problem**: Spark job permission issues and Docker container debugging complexity
-- **Solution**: Moved Spark processing to Google Colab for remote execution
-- **Benefits**: 
-  - No Docker permission issues
-  - Real-time debugging and monitoring
-  - Easy code modifications
-  - Cost-effective processing
+### **✅ Working Data Pipeline**
+- **Status**: Fully operational real-time data processing
+- **Flow**: Lambda → Kafka → Spark → PostgreSQL
+- **Performance**: Processing batches with 1+ records every 10-30 seconds
+- **Monitoring**: Comprehensive Grafana dashboards
 
-### **Infrastructure Cleanup**
-- **Removed**: 127 temporary debug files
-- **Simplified**: `setup_services.sh` - removed Spark job deployment code
-- **Deleted**: `deploy_spark_job.sh` and test Spark job files
-- **Updated**: RDS security group for Colab access
+### **✅ Database Schema Management**
+- **Problem**: Spark job creating tables with "dummy" columns
+- **Solution**: Separated database schema management
+- **Implementation**: 
+  - Manual table creation via `database_schema.sql`
+  - Spark job only verifies tables exist
+  - Clean separation of concerns
+
+### **✅ Schema Mismatch Resolution**
+- **Problem**: Spark job expecting different field names than Kafka messages
+- **Solution**: Updated Spark job schema to match Kafka message format
+- **Changes**:
+  - `userId` instead of `user_id`
+  - `eventType` instead of `event_type`
+  - `page` instead of `page_url`
+  - Added `device` and `region` fields
+
+### **✅ Comprehensive Monitoring**
+- **Grafana Dashboards**: Professional-grade analytics dashboards
+- **Real-time Metrics**: Live data visualization
+- **User Behavior Analytics**: Conversion funnels and retention analysis
+- **System Monitoring**: Pipeline health and performance tracking
+
+### **✅ Error Handling & Debugging**
+- **Spark Job Logs**: Comprehensive logging and error handling
+- **Database Connection**: Proper connection testing and verification
+- **Performance Optimization**: Optimized processing intervals
+- **Debugging Guide**: Complete troubleshooting documentation
 
 ### **Current Architecture**
 ```
-Lambda → Kafka → [Colab reads from Kafka] → [Colab processes data] → PostgreSQL
+Lambda → Kafka → Spark (EC2 Local) → PostgreSQL → Grafana Dashboards
 ```
 
-### **Key Advantages**
-- ✅ **Simplified Debugging**: No Docker container issues
-- ✅ **Real-time Monitoring**: Live logs in Colab
-- ✅ **Easy Modifications**: Change code instantly
-- ✅ **Cost-effective**: Free processing vs AWS costs
-- ✅ **Reliable**: No permission or environment issues
+### **Key Achievements**
+- ✅ **Real-time Processing**: Data flowing from Lambda to PostgreSQL
+- ✅ **Schema Management**: Proper database schema with separated concerns
+- ✅ **Comprehensive Monitoring**: Professional dashboards with analytics
+- ✅ **Error Handling**: Robust error handling and debugging
+- ✅ **Performance**: Optimized processing with proper timeouts
+- ✅ **Documentation**: Complete debugging guide and setup instructions
 
 ---
 
