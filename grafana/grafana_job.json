@@ -1,0 +1,131 @@
+{
+    "clickstream_dashboard": {
+      "dashboard": {
+        "title": "Clickstream Analytics Dashboard",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Real-Time Event Stream",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+            "targets": [{
+              "rawSql": "SELECT metric_timestamp as time, total_events as value FROM realtime_metrics WHERE $__timeFilter(metric_timestamp) ORDER BY time",
+              "format": "time_series"
+            }]
+          },
+          {
+            "id": 2,
+            "title": "Active Users",
+            "type": "stat",
+            "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+            "targets": [{
+              "rawSql": "SELECT unique_users FROM realtime_metrics ORDER BY metric_timestamp DESC LIMIT 1",
+              "format": "table"
+            }]
+          },
+          {
+            "id": 3,
+            "title": "Conversion Rate",
+            "type": "gauge",
+            "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+            "targets": [{
+              "rawSql": "SELECT (CAST(purchases AS FLOAT) / NULLIF(page_views, 0) * 100) as value FROM realtime_metrics ORDER BY metric_timestamp DESC LIMIT 1",
+              "format": "table"
+            }]
+          },
+          {
+            "id": 4,
+            "title": "Top Pages",
+            "type": "table",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+            "targets": [{
+              "rawSql": "SELECT page_url, view_count, unique_visitors, ROUND(CAST(unique_visitors AS FLOAT) / view_count * 100, 2) as bounce_rate FROM page_metrics ORDER BY view_count DESC LIMIT 10",
+              "format": "table"
+            }]
+          },
+          {
+            "id": 5,
+            "title": "Events by Type",
+            "type": "piechart",
+            "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+            "targets": [{
+              "rawSql": "SELECT event_type, COUNT(*) as count FROM clickstream_events WHERE timestamp > NOW() - INTERVAL '1 hour' GROUP BY event_type",
+              "format": "table"
+            }]
+          },
+          {
+            "id": 6,
+            "title": "Device Distribution",
+            "type": "piechart",
+            "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+            "targets": [{
+              "rawSql": "SELECT dimension_value as device, event_count FROM device_analytics WHERE dimension_type = 'device' ORDER BY event_count DESC",
+              "format": "table"
+            }]
+          },
+          {
+            "id": 7,
+            "title": "User Activity Heatmap",
+            "type": "heatmap",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+            "targets": [{
+              "rawSql": "SELECT DATE_TRUNC('hour', timestamp) as time, EXTRACT(hour FROM timestamp) as hour, COUNT(*) as value FROM clickstream_events WHERE $__timeFilter(timestamp) GROUP BY 1, 2",
+              "format": "time_series"
+            }]
+          },
+          {
+            "id": 8,
+            "title": "Session Metrics",
+            "type": "table",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+            "targets": [{
+              "rawSql": "SELECT metric_timestamp, unique_sessions, bounce_rate, avg_session_duration FROM realtime_metrics ORDER BY metric_timestamp DESC LIMIT 20",
+              "format": "table"
+            }]
+          }
+        ],
+        "refresh": "5s",
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        }
+      }
+    },
+    "user_behavior_dashboard": {
+      "dashboard": {
+        "title": "User Behavior Analytics",
+        "panels": [
+          {
+            "id": 1,
+            "title": "User Engagement Funnel",
+            "type": "stat",
+            "gridPos": {"h": 4, "w": 8, "x": 0, "y": 0},
+            "targets": [{
+              "rawSql": "SELECT 'Page Views' as metric, COUNT(*) as value FROM clickstream_events WHERE event_type = 'page_view' UNION SELECT 'Add to Cart', COUNT(*) FROM clickstream_events WHERE event_type = 'add_to_cart' UNION SELECT 'Purchases', COUNT(*) FROM clickstream_events WHERE event_type = 'purchase'",
+              "format": "table"
+            }]
+          },
+          {
+            "id": 2,
+            "title": "Top Users by Activity",
+            "type": "table",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+            "targets": [{
+              "rawSql": "SELECT user_id, total_sessions, total_page_views, total_purchases, lifetime_value FROM user_behavior ORDER BY total_page_views DESC LIMIT 20",
+              "format": "table"
+            }]
+          },
+          {
+            "id": 3,
+            "title": "User Retention Cohort",
+            "type": "heatmap",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+            "targets": [{
+              "rawSql": "SELECT DATE_TRUNC('day', MIN(timestamp)) as cohort_day, DATE_TRUNC('day', timestamp) as activity_day, COUNT(DISTINCT user_id) as users FROM clickstream_events GROUP BY user_id, DATE_TRUNC('day', timestamp) HAVING COUNT(*) > 1",
+              "format": "table"
+            }]
+          }
+        ]
+      }
+    }
+  }

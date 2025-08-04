@@ -21,7 +21,7 @@ Clickstream Generator (AWS Lambda)
        ↓
    Kafka (EC2)
        ↓
-Spark Processor (Google Colab)
+Spark Processor (EC2 Local Cluster)
        ↓
 PostgreSQL (Processed Data)
        ↓
@@ -37,7 +37,7 @@ PostgreSQL (Processed Data)
 |----------------|---------------------------|
 | Clickstream Sim| AWS Lambda (Python)       |
 | Message Queue  | Apache Kafka (on EC2)     |
-| Processing     | Apache Spark (Google Colab)|
+| Processing     | Apache Spark (EC2 Local)  |
 | Storage        | AWS RDS (PostgreSQL)      |
 | Monitoring     | Prometheus, Grafana       |
 | IaC            | AWS CDK (Python)          |
@@ -47,11 +47,11 @@ PostgreSQL (Processed Data)
 ## 🧹 Features
 
 - ⚡ Real-time data ingestion with Kafka
-- 🔥 Stream processing using Spark (Google Colab)
+- 🔥 Stream processing using Spark (EC2 Local Cluster)
 - 📂 PostgreSQL storage for processed data
 - 📈 Live system metrics using Prometheus and Grafana
 - 🛠️ Reproducible infra setup using AWS CDK
-- 🌐 Remote processing with Google Colab
+- 🐳 Docker-based Spark cluster deployment
 
 ---
 

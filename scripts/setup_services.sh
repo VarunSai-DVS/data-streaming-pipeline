@@ -1,5 +1,5 @@
 #!/bin/bash
-# Clean post-deployment setup script for streaming pipeline infrastructure only
+# Clean infrastructure setup script - Just the services, no Spark job deployment
 
 set -e
 
@@ -9,7 +9,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}🚀 Starting Post-Deployment Infrastructure Setup${NC}"
+echo -e "${GREEN}🚀 Starting Infrastructure Setup${NC}"
 
 # Get infrastructure details
 EC2_INSTANCE_ID=$(aws cloudformation describe-stacks \
@@ -27,13 +27,14 @@ DB_ENDPOINT=$(aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[?OutputKey==`DatabaseEndpoint`].OutputValue' \
     --output text)
 
-if [ -z "$EC2_INSTANCE_ID" ] || [ -z "$PUBLIC_IP" ]; then
-    echo -e "${RED}❌ Could not get EC2 details${NC}"
+if [ -z "$EC2_INSTANCE_ID" ] || [ -z "$PUBLIC_IP" ] || [ -z "$DB_ENDPOINT" ]; then
+    echo -e "${RED}❌ Could not get required infrastructure details${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}✅ EC2 Instance ID: $EC2_INSTANCE_ID${NC}"
 echo -e "${GREEN}✅ EC2 Public IP: $PUBLIC_IP${NC}"
+echo -e "${GREEN}✅ DB Endpoint: $DB_ENDPOINT${NC}"
 
 # Get database password
 DB_PASSWORD=$(aws secretsmanager get-secret-value \
@@ -41,22 +42,39 @@ DB_PASSWORD=$(aws secretsmanager get-secret-value \
     --query SecretString \
     --output text | jq -r '.password')
 
-# Create setup script with infrastructure only
-cat > /tmp/setup_services.sh << SCRIPT_END
+if [ -z "$DB_PASSWORD" ]; then
+    echo -e "${RED}❌ Could not get database password${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ Retrieved database password${NC}"
+
+# Create setup script
+cat > /tmp/setup_infrastructure.sh << SCRIPT_END
 #!/bin/bash
 set -e
+set -x  # Enable debugging
 
 echo "Starting infrastructure setup on EC2..."
 
-# Ensure Docker and Docker Compose are installed and running
+# Ensure Docker is running
 sudo systemctl start docker
 sudo systemctl enable docker
 
+# Install docker-compose if not present
+if ! command -v docker-compose &> /dev/null; then
+    echo "Installing docker-compose..."
+    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-\$(uname -s)-\$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+    sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+fi
+
 # Create working directory
+mkdir -p /opt/streaming-pipeline
 cd /opt/streaming-pipeline
 
-# Create docker-compose.yml with proper IP substitution
-cat > docker-compose.yml << 'COMPOSE_END'
+# Create docker-compose.yml
+cat > docker-compose.yml << EOF
 version: '3.8'
 
 services:
@@ -96,6 +114,10 @@ services:
     environment:
       SPARK_MODE: master
       SPARK_MASTER_HOST: spark-master
+      # Environment variables available for Colab to use
+      KAFKA_BOOTSTRAP_SERVERS: ${PUBLIC_IP}:9092
+      POSTGRES_HOST: ${DB_ENDPOINT}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     volumes:
       - spark-data:/opt/spark/work
@@ -111,9 +133,16 @@ services:
       SPARK_MASTER: spark://spark-master:7077
       SPARK_WORKER_MEMORY: 512M
       SPARK_WORKER_CORES: 1
+      SPARK_WORKER_DIR: /tmp/spark-work
+      SPARK_LOCAL_DIRS: /tmp/spark-local
+      # Environment variables available for jobs
+      KAFKA_BOOTSTRAP_SERVERS: ${PUBLIC_IP}:9092
+      POSTGRES_HOST: ${DB_ENDPOINT}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     volumes:
       - spark-data:/opt/spark/work
+      - /tmp:/tmp
 
   prometheus:
     image: prom/prometheus:latest
@@ -143,10 +172,7 @@ volumes:
   spark-data:
   prometheus-data:
   grafana-data:
-COMPOSE_END
-
-# Replace placeholders in docker-compose.yml
-sed -i "s/\${PUBLIC_IP}/$PUBLIC_IP/g" docker-compose.yml
+EOF
 
 # Create prometheus.yml
 cat > prometheus.yml << 'PROM_END'
@@ -159,32 +185,26 @@ scrape_configs:
       - targets: ['localhost:9090']
 PROM_END
 
-# Create environment file with proper values
-cat > .env << ENV_END
-DB_HOST=$DB_ENDPOINT
-DB_PASSWORD=$DB_PASSWORD
-PUBLIC_IP=$PUBLIC_IP
-KAFKA_BOOTSTRAP_SERVERS=$PUBLIC_IP:9092
-ENV_END
+# Create connection info file for reference
+cat > connection_info.txt << EOF
+=== Connection Information ===
+Spark Master: spark://${PUBLIC_IP}:7077
+Kafka Bootstrap: ${PUBLIC_IP}:9092
+PostgreSQL Host: ${DB_ENDPOINT}
+PostgreSQL Database: clickstream_db
+PostgreSQL User: streamingadmin
 
-# Ensure environment variables are properly set
-if [ -z "$DB_ENDPOINT" ] || [ -z "$DB_PASSWORD" ]; then
-    echo "Getting database credentials..."
-    DB_ENDPOINT=$(aws cloudformation describe-stacks --stack-name InfrastructureStack --query 'Stacks[0].Outputs[?OutputKey==`DatabaseEndpoint`].OutputValue' --output text)
-    DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id streaming-pipeline-db-secret --query SecretString --output text | jq -r '.password')
-    
-    # Update .env file with actual values
-    echo "DB_HOST=$DB_ENDPOINT" > .env
-    echo "DB_PASSWORD=$DB_PASSWORD" >> .env
-    echo "PUBLIC_IP=$PUBLIC_IP" >> .env
-    echo "KAFKA_BOOTSTRAP_SERVERS=$PUBLIC_IP:9092" >> .env
-fi
+=== Web UIs ===
+Spark UI: http://${PUBLIC_IP}:8080
+Grafana: http://${PUBLIC_IP}:3000 (admin/admin123)
+Prometheus: http://${PUBLIC_IP}:9090
+EOF
 
 # Start services
 echo "Starting Docker Compose services..."
 docker-compose down || true
-docker-compose pull
-docker-compose --env-file .env up -d
+docker-compose pull || { echo "Failed to pull images"; exit 1; }
+docker-compose up -d || { echo "Failed to start services"; exit 1; }
 
 # Wait for services
 echo "Waiting for services to start..."
@@ -198,99 +218,101 @@ docker exec kafka kafka-topics --create \
     --partitions 3 \
     --replication-factor 1 || true
 
+# Download Spark dependencies for Kafka
+echo "Downloading Kafka connector for Spark..."
+docker exec spark-master bash -c "cd /opt/spark/jars && wget -q https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.12/3.5.0/spark-sql-kafka-0-10_2.12-3.5.0.jar || true"
+docker exec spark-worker bash -c "cd /opt/spark/jars && wget -q https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.12/3.5.0/spark-sql-kafka-0-10_2.12-3.5.0.jar || true"
+
 # Verify services
 echo "Verifying services..."
 docker ps
-
-echo "Infrastructure setup completed!"
-SCRIPT_END
-
-# Set variables in the script
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    sed -i '' "s/\$PUBLIC_IP/$PUBLIC_IP/g" /tmp/setup_services.sh
-    sed -i '' "s/\$DB_ENDPOINT/$DB_ENDPOINT/g" /tmp/setup_services.sh
-    sed -i '' "s/\$DB_PASSWORD/$DB_PASSWORD/g" /tmp/setup_services.sh
-else
-    # Linux
-    sed -i "s/\$PUBLIC_IP/$PUBLIC_IP/g" /tmp/setup_services.sh
-    sed -i "s/\$DB_ENDPOINT/$DB_ENDPOINT/g" /tmp/setup_services.sh
-    sed -i "s/\$DB_PASSWORD/$DB_PASSWORD/g" /tmp/setup_services.sh
+RUNNING_CONTAINERS=\$(docker ps -q | wc -l)
+if [ "\$RUNNING_CONTAINERS" -lt 4 ]; then
+    echo "ERROR: Expected 5 containers, but only \$RUNNING_CONTAINERS running!"
+    docker ps -a
+    exit 1
 fi
 
-# Upload setup script to S3
+echo "Infrastructure setup completed successfully!"
+echo ""
+cat connection_info.txt
+SCRIPT_END
+
+# Upload and execute setup script
 TEMP_BUCKET="setup-$(date +%s)"
 aws s3 mb s3://$TEMP_BUCKET
-aws s3 cp /tmp/setup_services.sh s3://$TEMP_BUCKET/setup_services.sh
+aws s3 cp /tmp/setup_infrastructure.sh s3://$TEMP_BUCKET/setup_infrastructure.sh
 
-# Execute setup script on EC2
 echo -e "${YELLOW}📤 Executing infrastructure setup on EC2...${NC}"
 
 COMMAND_ID=$(aws ssm send-command \
     --instance-ids $EC2_INSTANCE_ID \
     --document-name "AWS-RunShellScript" \
     --parameters "{\"commands\":[
-        \"aws s3 cp s3://$TEMP_BUCKET/setup_services.sh /tmp/setup_services.sh\",
-        \"chmod +x /tmp/setup_services.sh\",
-        \"sudo /tmp/setup_services.sh 2>&1 | tee /var/log/setup_services.log\"
+        \"aws s3 cp s3://$TEMP_BUCKET/setup_infrastructure.sh /tmp/setup_infrastructure.sh\",
+        \"chmod +x /tmp/setup_infrastructure.sh\",
+        \"sudo /tmp/setup_infrastructure.sh 2>&1 | tee /var/log/setup_infrastructure.log\"
     ]}" \
     --query 'Command.CommandId' \
     --output text)
 
-echo -e "${YELLOW}⏳ Waiting for setup to complete (Command ID: $COMMAND_ID)...${NC}"
+echo -e "${YELLOW}⏳ Waiting for setup to complete...${NC}"
 
-# Wait for command completion
 aws ssm wait command-executed \
     --command-id $COMMAND_ID \
     --instance-id $EC2_INSTANCE_ID || true
 
-# Get command output
 STATUS=$(aws ssm get-command-invocation \
     --command-id $COMMAND_ID \
     --instance-id $EC2_INSTANCE_ID \
     --query 'Status' \
-    --output text)
+    --output text 2>/dev/null || echo "Unknown")
 
 if [ "$STATUS" = "Success" ]; then
     echo -e "${GREEN}✅ Infrastructure setup completed successfully!${NC}"
 else
     echo -e "${RED}❌ Setup failed with status: $STATUS${NC}"
-    echo "Getting error output..."
-    aws ssm get-command-invocation \
-        --command-id $COMMAND_ID \
-        --instance-id $EC2_INSTANCE_ID \
-        --query 'StandardErrorContent' \
-        --output text
+    echo "Check logs with: aws ssm start-session --target $EC2_INSTANCE_ID"
+    echo "Then run: sudo cat /var/log/setup_infrastructure.log"
 fi
 
-# Cleanup temporary S3 bucket
+# Cleanup
 aws s3 rb s3://$TEMP_BUCKET --force
 
 # Create monitoring script
 cat > monitor_services.sh << 'MONITOR_END'
 #!/bin/bash
-# Monitor streaming pipeline services
-
 EC2_ID=$(aws cloudformation describe-stacks --stack-name InfrastructureStack --query "Stacks[0].Outputs[?OutputKey=='EC2InstanceId'].OutputValue" --output text)
 
 echo "=== Service Status ==="
 aws ssm send-command \
     --instance-ids "$EC2_ID" \
     --document-name "AWS-RunShellScript" \
-    --parameters '{"commands":["docker ps","echo","docker logs kafka --tail 10","echo","docker logs spark-master --tail 10"]}' \
+    --parameters '{"commands":["cd /opt/streaming-pipeline && docker ps"]}' \
     --output text
 MONITOR_END
-
 chmod +x monitor_services.sh
 
-echo -e "${GREEN}🎉 Infrastructure setup complete!${NC}"
-echo -e "${GREEN}📊 Spark UI: http://$PUBLIC_IP:8080${NC}"
-echo -e "${GREEN}📈 Grafana: http://$PUBLIC_IP:3000 (admin/admin123)${NC}"
-echo -e "${GREEN}📊 Prometheus: http://$PUBLIC_IP:9090${NC}"
-echo -e "${GREEN}📡 Kafka: $PUBLIC_IP:9092${NC}"
+# Output connection information
+echo -e "${GREEN}🎉 Infrastructure Ready!${NC}"
 echo ""
-echo -e "${YELLOW}📝 Next steps:${NC}"
-echo "1. Lambda is publishing to Kafka every minute"
-echo "2. Connect to Spark from Colab: spark://$PUBLIC_IP:7077"
-echo "3. Monitor services: ./monitor_services.sh"
-echo "4. View logs: aws ssm start-session --target $EC2_INSTANCE_ID"
+echo -e "${YELLOW}=== Connection Information for Google Colab ===${NC}"
+echo -e "${GREEN}Spark Master URL:${NC} spark://$PUBLIC_IP:7077"
+echo -e "${GREEN}Kafka Bootstrap:${NC} $PUBLIC_IP:9092"
+echo -e "${GREEN}PostgreSQL:${NC}"
+echo "  Host: $DB_ENDPOINT"
+echo "  Database: clickstream_db"
+echo "  User: streamingadmin"
+echo "  Password: (from AWS Secrets Manager)"
+echo ""
+echo -e "${YELLOW}=== Web UIs ===${NC}"
+echo -e "${GREEN}Spark UI:${NC} http://$PUBLIC_IP:8080"
+echo -e "${GREEN}Grafana:${NC} http://$PUBLIC_IP:3000 (admin/admin123)"
+echo -e "${GREEN}Prometheus:${NC} http://$PUBLIC_IP:9090"
+echo ""
+echo -e "${YELLOW}=== Google Colab Connection Example ===${NC}"
+echo "spark = SparkSession.builder \\"
+echo "    .appName('ClickstreamAnalysis') \\"
+echo "    .master('spark://$PUBLIC_IP:7077') \\"
+echo "    .config('spark.executor.memory', '512m') \\"
+echo "    .getOrCreate()"

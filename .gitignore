@@ -24,3 +24,4 @@ restart_output.txt
 # Lambda layer files (should be recreated, not committed)
 python/
 lambda-layer.zip
+.DS_Store
